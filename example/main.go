@@ -23,7 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	"maistra.io/api/client/versioned"
-	extensionv1 "maistra.io/api/extension/v1"
+	corev1 "maistra.io/api/core/v1"
 )
 
 func createClientSet() *versioned.Clientset {
@@ -43,7 +43,7 @@ func createClientSet() *versioned.Clientset {
 
 func listExtensions(cs *versioned.Clientset) {
 	fmt.Printf("Listing Extensions in all namespaces:\n")
-	list, err := cs.ExtensionV1().ServiceMeshExtensions(metav1.NamespaceAll).List(context.TODO(), metav1.ListOptions{})
+	list, err := cs.CoreV1().ServiceMeshExtensions(metav1.NamespaceAll).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		fmt.Printf("error listing: %v\n", err)
 		return
@@ -60,7 +60,7 @@ func listExtensions(cs *versioned.Clientset) {
 
 		// e is of type v1.ServiceMeshExtension
 		// the copy below is not needed, it just ilustrates an use of the api
-		var copy *extensionv1.ServiceMeshExtension = e.DeepCopy()
+		var copy *corev1.ServiceMeshExtension = e.DeepCopy()
 		config, err := copy.Spec.Config.MarshalJSON()
 		if err != nil {
 			fmt.Printf("\terror getting extension config: %v\n", err)
@@ -73,7 +73,7 @@ func listExtensions(cs *versioned.Clientset) {
 
 func listControlPlanes(cs *versioned.Clientset) {
 	fmt.Printf("Listing Control planes in all namespaces:\n")
-	list, err := cs.ControlplaneV2().ServiceMeshControlPlanes(metav1.NamespaceAll).List(context.TODO(), metav1.ListOptions{})
+	list, err := cs.CoreV2().ServiceMeshControlPlanes(metav1.NamespaceAll).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		fmt.Printf("error listing: %v\n", err)
 		return
@@ -87,7 +87,7 @@ func listControlPlanes(cs *versioned.Clientset) {
 	for _, cp := range list.Items {
 		fmt.Printf("- Found control plane %s/%s: (version: %s)\n", cp.Namespace, cp.Name, cp.Status.ChartVersion)
 
-		memberroll, err := cs.MemberrollV1().ServiceMeshMemberRolls(cp.Namespace).Get(context.TODO(), "default", metav1.GetOptions{})
+		memberroll, err := cs.CoreV1().ServiceMeshMemberRolls(cp.Namespace).Get(context.TODO(), "default", metav1.GetOptions{})
 		if err != nil {
 			fmt.Printf("could not get the `default' SMMR in the %s namespace: %v\n", cp.Namespace, err)
 			continue

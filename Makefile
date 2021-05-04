@@ -1,80 +1,49 @@
-
-# Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
-CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false,crdVersions=v1beta1"
-
-# Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
-ifeq (,$(shell go env GOBIN))
-GOBIN=$(shell go env GOPATH)/bin
-else
-GOBIN=$(shell go env GOBIN)
-endif
-
-SHELL = /usr/bin/env bash -o pipefail
-.SHELLFLAGS = -ec
-
-all: build
-build: generate-client generate-lister generate-informer generate-copy generate-crd
-
-generate-crd: controller-gen
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths=./... output:dir=./manifests/
-	sed -i -e '/---/d' ./manifests/maistra.io_*.yaml
-
-generate-copy: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="header.go.txt" paths="./..."
-
-kube_base_output_package = maistra.io/api
-kube_clientset_package = $(kube_base_output_package)/client
-kube_listers_package = $(kube_base_output_package)/client/listers
-kube_informers_package = $(kube_base_output_package)/client/informers
+CONTROLLER_GEN = go run vendor/sigs.k8s.io/controller-tools/cmd/controller-gen/main.go
+LISTER_GEN     = go run vendor/k8s.io/code-generator/cmd/lister-gen/main.go
+INFORMER_GEN   = go run vendor/k8s.io/code-generator/cmd/informer-gen/main.go
+CLIENT_GEN     = go run vendor/k8s.io/code-generator/cmd/client-gen/main.go
 
 empty :=
 space := $(empty) $(empty)
 
 kube_api_packages = $(subst $(space),$(empty), \
-	$(kube_base_output_package)/controlplane/v1, \
-	$(kube_base_output_package)/controlplane/v2, \
-	$(kube_base_output_package)/extension/v1, \
-	$(kube_base_output_package)/extension/v1alpha1, \
-	$(kube_base_output_package)/federation/v1alpha1, \
-	$(kube_base_output_package)/member/v1, \
-	$(kube_base_output_package)/memberroll/v1 \
+	$(kube_base_output_package)/core/v1, \
+	$(kube_base_output_package)/core/v1alpha1, \
+	$(kube_base_output_package)/core/v2 \
 	)
+kube_base_output_package = maistra.io/api
+kube_clientset_package   = $(kube_base_output_package)/client
+kube_listers_package     = $(kube_base_output_package)/client/listers
+kube_informers_package   = $(kube_base_output_package)/client/informers
+path_apis                = "./core/..."
+header_file              = "header.go.txt"
 
-generate-client: client-gen
-	$(CLIENT_GEN) --clientset-name versioned --input-base "" --input $(kube_api_packages) --output-package $(kube_clientset_package) -h header.go.txt
+generate-crd:
+	$(CONTROLLER_GEN) crd:preserveUnknownFields=false,crdVersions=v1beta1 paths=$(path_apis) output:dir=./manifests/
+	sed -i -e '/---/d' ./manifests/maistra.io_*.yaml
 
-generate-lister: lister-gen
-	$(LISTER_GEN) --input-dirs $(kube_api_packages) --output-package $(kube_listers_package) -h header.go.txt
+generate-copy:
+	$(CONTROLLER_GEN) object:headerFile=$(header_file) paths=$(path_apis)
 
-generate-informer: informer-gen
-	$(INFORMER_GEN) --input-dirs $(kube_api_packages) --versioned-clientset-package $(kube_clientset_package)/versioned --listers-package $(kube_listers_package) --output-package $(kube_informers_package) -h header.go.txt --single-directory
+generate-client:
+	$(CLIENT_GEN) --clientset-name versioned --input-base "" --input $(kube_api_packages) --output-package $(kube_clientset_package) -h $(header_file)
 
-CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
-controller-gen: ## Download controller-gen locally if necessary.
-	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.4.1)
+generate-lister:
+	$(LISTER_GEN) --input-dirs $(kube_api_packages) --output-package $(kube_listers_package) -h $(header_file)
 
-LISTER_GEN = $(shell pwd)/bin/lister-gen
-lister-gen: ## Download lister-gen locally if necessary.
-	$(call go-get-tool,$(LISTER_GEN),k8s.io/code-generator/cmd/lister-gen@v0.20.6)
+generate-informer:
+	$(INFORMER_GEN) --input-dirs $(kube_api_packages) --versioned-clientset-package $(kube_clientset_package)/versioned --listers-package $(kube_listers_package) --output-package $(kube_informers_package) -h $(header_file)
 
-INFORMER_GEN = $(shell pwd)/bin/informer-gen
-informer-gen: ## Download informer-gen locally if necessary.
-	$(call go-get-tool,$(INFORMER_GEN),k8s.io/code-generator/cmd/informer-gen@v0.20.6)
+clean:
+	rm -rf client manifests
+	find core -name zz_generated.deepcopy.go -delete
 
-CLIENT_GEN = $(shell pwd)/bin/client-gen
-client-gen: ## Download client-gen locally if necessary.
-	$(call go-get-tool,$(CLIENT_GEN),k8s.io/code-generator/cmd/client-gen@v0.20.6)
+all: gen
+gen: generate-client generate-lister generate-informer generate-copy generate-crd
+	go mod tidy
+	go mod vendor
 
-# go-get-tool will 'go get' any package $2 and install it to $1.
-PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
-define go-get-tool
-@[ -f $(1) ] || { \
-set -e ;\
-TMP_DIR=$$(mktemp -d) ;\
-cd $$TMP_DIR ;\
-go mod init tmp ;\
-echo "Downloading $(2)" ;\
-GOBIN=$(PROJECT_DIR)/bin go get $(2) ;\
-rm -rf $$TMP_DIR ;\
-}
-endef
+gen-check: clean gen check-clean-repo
+
+check-clean-repo:
+	@if [[ -n $$(git status --porcelain) ]]; then echo -e "ERROR: Some files need to be updated, run 'make gen' and include any changed files in your PR. Output:\n"; git status; git diff; exit 1; fi
