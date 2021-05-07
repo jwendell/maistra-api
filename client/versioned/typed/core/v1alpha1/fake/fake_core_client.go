@@ -30,6 +30,10 @@ func (c *FakeCoreV1alpha1) MeshFederations(namespace string) v1alpha1.MeshFedera
 	return &FakeMeshFederations{c, namespace}
 }
 
+func (c *FakeCoreV1alpha1) ServiceExportses(namespace string) v1alpha1.ServiceExportsInterface {
+	return &FakeServiceExportses{c, namespace}
+}
+
 func (c *FakeCoreV1alpha1) ServiceMeshExtensions(namespace string) v1alpha1.ServiceMeshExtensionInterface {
 	return &FakeServiceMeshExtensions{c, namespace}
 }
